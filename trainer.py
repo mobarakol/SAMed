@@ -68,6 +68,8 @@ def trainer_synapse(args, model, snapshot_path, multimask_output, low_res):
     logging.info("{} iterations per epoch. {} max iterations ".format(len(trainloader), max_iterations))
     best_performance = 0.0
     iterator = tqdm(range(max_epoch), ncols=70)
+    best_epoch = 0
+    best_loss = np.inf
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w]
@@ -111,15 +113,32 @@ def trainer_synapse(args, model, snapshot_path, multimask_output, low_res):
                 writer.add_image('train/Prediction', output_masks[1, ...] * 50, iter_num)
                 labs = label_batch[1, ...].unsqueeze(0) * 50
                 writer.add_image('train/GroundTruth', labs, iter_num)
+        with torch.no_grad():
+            for i_batch, sampled_batch in enumerate(validloader):
+                image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w]
+                low_res_label_batch = sampled_batch['low_res_label']
+                image_batch, label_batch = image_batch.cuda(), label_batch.cuda()
+                low_res_label_batch = low_res_label_batch.cuda()
+                assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
+                outputs = model(image_batch, multimask_output, args.img_size)
+                loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, args.dice_param)
 
-        save_interval = 20 # int(max_epoch/6)
-        if (epoch_num + 1) % save_interval == 0:
+        if loss < best_loss:
+            best_loss = loss
+            best_epoch = epoch_num
             save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
             except:
                 model.module.save_lora_parameters(save_mode_path)
-            logging.info("save model to {}".format(save_mode_path))
+        # save_interval = 20 # int(max_epoch/6)
+        # if (epoch_num + 1) % save_interval == 0:
+        #     save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
+        #     try:
+        #         model.save_lora_parameters(save_mode_path)
+        #     except:
+        #         model.module.save_lora_parameters(save_mode_path)
+        #     logging.info("save model to {}".format(save_mode_path))
 
         if epoch_num >= max_epoch - 1 or epoch_num >= stop_epoch - 1:
             save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
