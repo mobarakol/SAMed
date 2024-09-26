@@ -69,7 +69,7 @@ def trainer_synapse(args, model, snapshot_path, multimask_output, low_res):
     best_performance = 0.0
     iterator = tqdm(range(max_epoch), ncols=70)
     best_epoch = 0
-    best_loss = np.inf
+    best_loss_val = np.inf
     for epoch_num in iterator:
         for i_batch, sampled_batch in enumerate(trainloader):
             image_batch, label_batch = sampled_batch['image'], sampled_batch['label']  # [b, c, h, w], [b, h, w]
@@ -121,16 +121,18 @@ def trainer_synapse(args, model, snapshot_path, multimask_output, low_res):
                 low_res_label_batch = low_res_label_batch.cuda()
                 assert image_batch.max() <= 3, f'image_batch max: {image_batch.max()}'
                 outputs = model(image_batch, multimask_output, args.img_size)
-                loss, loss_ce, loss_dice = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, args.dice_param)
+                loss_val, _, _ = calc_loss(outputs, low_res_label_batch, ce_loss, dice_loss, args.dice_param)
 
-        if loss < best_loss:
-            best_loss = loss
+        if loss_val < best_loss_val:
+            best_loss_val = loss_val
             best_epoch = epoch_num
             save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
             try:
                 model.save_lora_parameters(save_mode_path)
             except:
                 model.module.save_lora_parameters(save_mode_path)
+
+        print("Epoch:{}/{}, loss:{}, best loss:{}, best epoch:{}".format(epoch_num, iterator, loss_val, best_loss_val, best_epoch)
         # save_interval = 20 # int(max_epoch/6)
         # if (epoch_num + 1) % save_interval == 0:
         #     save_mode_path = os.path.join(snapshot_path, 'epoch_' + str(epoch_num) + '.pth')
